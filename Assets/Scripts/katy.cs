@@ -10,17 +10,16 @@ public class katy : MonoBehaviour
 
     private float health = 100f;
 
-    private float shootCooldown = 0.5f;
-    private float shootTimeCount = 0f;
+    private bool gunReady = true;
+    private float shootCooldown = 0.2f;
+
     private float maxSlopeAngle = 3f * Mathf.PI / 8f;
 
     private float jumpSquatTime = 5f / 60f;
     private float accumulatedJumpTime = 0f;
-
-    //private bool airdashAvailable = true;
-    //private float airdashVelocity = 5f;
+    
     private float frictionScale = 0.5f;
-    //private Vector2 airDashOffset = Vector2.up;
+    
     private float jumpVeclocity = 10f;
     public float runForce = 10f;
     private bool grounded = false;
@@ -38,33 +37,49 @@ public class katy : MonoBehaviour
         //tilda flips the bits! (so ignores player)
         layermask = ~LayerMask.GetMask("playerLayer");
     }
-
-    private void groundUpdate(float dt)
-    {
-
-    }
-
-    private void waterUpdate(float dt)
-    {
-
-    }
-
-    private void airUpdate(float dt)
-    {
-
-    }
-
+    
     void Update()
     {
         float dt = Time.deltaTime;
 
-        sliding = Input.GetAxisRaw("Vertical") == -1f;
-       
+        Vector2 aim = new Vector2(Input.GetAxisRaw("AimHorizontal"), -Input.GetAxisRaw("AimVertical"));
+
         Bounds bounds = box.bounds;
         box.bounds.Expand(-2f * 0.01f);
 
         Vector2 bottomLeft = new Vector2(bounds.min.x, bounds.min.y);
         Vector2 bottomRight = new Vector2(bounds.max.x, bounds.min.y);
+
+        //Sliding
+        if (Input.GetAxisRaw("Vertical") == -1f)
+        {
+            if (!sliding)
+            {
+                sliding = true;
+                transform.rotation = Quaternion.AngleAxis(135f, Vector3.back);
+                rb.freezeRotation = false;
+            }
+
+            
+                
+                //transform.rotation = Quaternion.AngleAxis(90f - (Mathf.Rad2Deg * groundAngle),Vector3.back);
+            
+            /*
+            if(!grounded)
+            {
+                transform.rotation = Quaternion.identity;
+                rb.freezeRotation = true;
+                sliding = false;
+            }*/
+        }
+        else
+        {
+            transform.rotation = Quaternion.identity;
+            rb.freezeRotation = true;
+            sliding = false;
+        }
+
+       
         
         //left foot
         RaycastHit2D blDown = Physics2D.Raycast(bottomLeft, Vector2.down, 0.03f, layermask);
@@ -90,18 +105,15 @@ public class katy : MonoBehaviour
         {
             groundAngle = Vector2.SignedAngle(Vector2.up, blDown.normal) * Mathf.Deg2Rad;
             grounded = true;
-            //airdashAvailable = true;
         }
         else if(brDown)
         {
             groundAngle = Vector2.SignedAngle(Vector2.up, brDown.normal) * Mathf.Deg2Rad;
-            //airdashAvailable = true;
             grounded = true;
         }
         else if(onPoint)
         {
             groundAngle = 0f;
-            //airdashAvailable = true;
             grounded = true;
         }
 
@@ -122,10 +134,10 @@ public class katy : MonoBehaviour
             }
         }
 
-        if(!sliding)
+        //shoot bullet while not sliding
+        if (!sliding && gunReady)
         {
-            //shoot bullet while not sliding
-            if(Input.GetMouseButtonDown(0))
+            if(Input.GetMouseButton(0))
             {
                 GameObject bulletz = Instantiate(bullet,new Vector2(transform.position.x,transform.position.y), Quaternion.identity);
                 Physics2D.IgnoreCollision(box, bulletz.GetComponent<CircleCollider2D>());
@@ -134,6 +146,20 @@ public class katy : MonoBehaviour
                 float bulletAngle = Vector2.SignedAngle(Vector2.right, bulletDirection);
                 bulletz.GetComponent<Rigidbody2D>().AddForce(bulletDirection.normalized * bulletForce, ForceMode2D.Impulse);
                 bulletz.transform.Rotate(0f, 0f, bulletAngle);
+
+                StartCoroutine(cooldown());
+            }
+            else if(Mathf.Abs(aim.x) > 0.5f || Mathf.Abs(aim.y) > 0.5f)
+            {
+                GameObject bulletz = Instantiate(bullet, new Vector2(transform.position.x, transform.position.y), Quaternion.identity);
+                Physics2D.IgnoreCollision(box, bulletz.GetComponent<CircleCollider2D>());
+
+                Vector2 bulletDirection = aim;
+                float bulletAngle = Vector2.SignedAngle(Vector2.right, bulletDirection);
+                bulletz.GetComponent<Rigidbody2D>().AddForce(bulletDirection.normalized * bulletForce, ForceMode2D.Impulse);
+                bulletz.transform.Rotate(0f, 0f, bulletAngle);
+
+                StartCoroutine(cooldown());
             }
         }
 
@@ -142,11 +168,12 @@ public class katy : MonoBehaviour
         {
             if(Input.GetButtonDown("Jump"))
             {
-                rb.velocity = new Vector2(rb.velocity.x,jumpVeclocity);
+                //rb.velocity = new Vector2(rb.velocity.x,jumpVeclocity);
+                StartCoroutine(jump());
             }
             else if(sliding)
             {
-                rb.gravityScale = 1f;
+                rb.gravityScale = 3f;
             }
             else
             {
@@ -162,25 +189,29 @@ public class katy : MonoBehaviour
         }
         else
         {
-            /*
-            if(Input.GetButtonDown("DashShield") && airdashAvailable)
-            {
-                Vector2 inputDirection = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")).normalized;
-                Vector2 dash = inputDirection * airdashVelocity;
-
-                rb.velocity = dash;
-                airdashAvailable = false;
-            }
-            */
             Vector2 resultDrift = new Vector2(Input.GetAxisRaw("Horizontal"),0f);
             rb.AddForce(resultDrift * runForce, ForceMode2D.Force);
-            rb.gravityScale = 1f;
+            rb.gravityScale = 1.5f;
         }
+    }
 
+    IEnumerator cooldown()
+    {
+        gunReady = false;
+        yield return new WaitForSeconds(shootCooldown);
+        gunReady = true;
+    }
 
-
-        if (grounded) groundUpdate(dt);
-        else if (water) waterUpdate(dt);
-        else airUpdate(dt);
+    IEnumerator jump()
+    {
+        yield return new WaitForSeconds(jumpSquatTime);
+        if(Input.GetButton("Jump"))
+        {
+            rb.velocity = new Vector2(rb.velocity.x, jumpVeclocity * 0.75f);
+        }
+        else
+        {
+            rb.velocity = new Vector2(rb.velocity.x, jumpVeclocity * 0.5f);
+        }
     }
 }
